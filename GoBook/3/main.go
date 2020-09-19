@@ -2,18 +2,24 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 
 	_ "github.com/lib/pq"
 )
 
-// 送信構造体
 type Post struct {
-	// User    string
-	// Threads []string
+	Id       int
+	Content  string
+	Author   string
+	Comments []Comment
+}
+
+type Comment struct {
 	Id      int
 	Content string
 	Author  string
+	Post    *Post
 }
 
 // 書き込み
@@ -181,71 +187,112 @@ var Db *sql.DB
 
 func init() {
 	var err error
-	Db, err = sql.Open("postgres", "user=gwp dbname=gwp password=gwp sslmode=disable")
+	Db, err = sql.Open("postgres", "user=gest dbname=gest password=gest sslmode=disable")
 	if err != nil {
 		panic(err)
 	}
 }
 
-func Posts(limit int) (posts []Post, err error) {
-	rows, err := Db.Query("select id, content, author from posts limit$1, limit")
+func (comment *Comment) Create() (err error) {
+	if comment.Post == nil {
+		err = errors.New("投稿が見つかりません")
+		// err = errors.New("Post not found")
+		return
+	}
+	err = Db.QueryRow("insert into comments (content, author, post_id) values ($1, $2, $3) returning id", comment.Content, comment.Author, comment.Post.Id).Scan(&comment.Id)
+	return
+}
+
+// func Posts(limit int) (posts []Post, err error) {
+// 	rows, err := Db.Query("select id, content, author from posts limit $1", limit)
+// 	if err != nil {
+// 		return
+// 	}
+// 	for rows.Next() {
+// 		post := Post{}
+// 		err = rows.Scan(&post.Id, &post.Content, &post.Author)
+// 		if err != nil {
+// 			return
+// 		}
+// 		posts = append(posts, post)
+// 	}
+// 	rows.Close()
+// 	return
+// }
+
+func GetPost(id int) (post Post, err error) {
+	post = Post{}
+	post.Comments = []Comment{}
+	err = Db.QueryRow("select id, content, author from posts where id = $1", id).Scan(&post.Id, &post.Content, &post.Author)
+
+	rows, err := Db.Query("select id, content, author from comments where post_id = $1", id)
 	if err != nil {
 		return
 	}
 	for rows.Next() {
-		post := Post{}
-		err = rows.Scan(&post.Id, &post.Content, &post.Author)
+		comment := Comment{Post: &post}
+		err = rows.Scan(&comment.Id, &comment.Content, &comment.Author)
 		if err != nil {
 			return
 		}
-		posts = append(posts, post)
+		post.Comments = append(post.Comments, comment)
 	}
 	rows.Close()
 	return
 }
 
-func GetPost(id int) (post Post, err error) {
-	post = Post{}
-	err = Db.QueryRow("select id, content,author from posts where id = $1, id").Scan(&post.Id, &post.Content, &post.Author)
-	return
-}
-
 func (post *Post) Create() (err error) {
-	statement := "insert into posts (content, author) valuse ($1, &2) returning id"
-	stmt, err := Db.Prepare(statement)
-	if err != nil {
-		return
-	}
-	defer stmt.Close()
-	err = stmt.QueryRow(post.Content, post.Author).Scan(&post.Id)
+	err = Db.QueryRow("insert into posts (content, author) values ($1, $2) returning id", post.Content, post.Author).Scan(&post.Id)
 	return
 }
 
-func (post *Post) Update() (err error) {
-	_, err = Db.Exec("update posts set content = $2, author = $3 whereid = $1", post.Id, post.Content, post.Author)
-	return
-}
+// 	statement := "insert into posts (content, author) values ($1, $2) returning id"
+// 	stmt, err := Db.Prepare(statement)
+// 	if err != nil {
+// 		return
+// 	}
+// 	defer stmt.Close()
+// 	err = stmt.QueryRow(post.Content, post.Author).Scan(&post.Id)
+// 	return
+// }
 
-func (post *Post) Delete() (err error) {
-	_, err = Db.Exec("delete from posts where id = $1", post.Id)
-	return
-}
+// func (post *Post) Update() (err error) {
+// 	_, err = Db.Exec("update posts set content = $2, author = $3 where id = $1", post.Id, post.Content, post.Author)
+// 	return
+// }
+
+// func (post *Post) Delete() (err error) {
+// 	_, err = Db.Exec("delete from posts where id = $1", post.Id)
+// 	return
+// }
+
+// func DeleteAll() (err error) {
+// 	_, err = Db.Exec("delete from posts")
+// 	return
+// }
 
 func main() {
-	post := Post{Content: "Helllo world", Author: "Sau Sheong"}
-	fmt.Println(post)
+	post := Post{Content: "Hello World!", Author: "Sau Sheong"}
+	// fmt.Println(post)
 	post.Create()
-	fmt.Println(post)
+	comment := Comment{Content: "いい投稿だね", Author: "Joe", Post: &post}
+	comment.Create()
 	readPost, _ := GetPost(post.Id)
+
 	fmt.Println(readPost)
+	fmt.Println(readPost.Comments)
+	fmt.Println(readPost.Comments[0].Post)
+	// fmt.Println(post)
+	// readPost, _ := GetPost(post.Id)
+	// fmt.Println(readPost)
 
-	readPost.Content = "Bonjour Monde"
-	readPost.Author = "Pierre"
-	readPost.Update()
-	posts, _ := Posts(10)
-	fmt.Println(posts)
+	// readPost.Content = "Bonjour Monde"
+	// readPost.Author = "Pierre"
+	// readPost.Update()
+	// posts, _ := Posts(10)
+	// fmt.Println(posts)
 
-	readPost.Delete()
+	// readPost.Delete()
 	// csvFile, err := os.Create("posts.csv")
 	// if err != nil {
 	// 	panic(err)
